@@ -28,6 +28,9 @@ class Card {
     getRank() {
         return this.rank;
     }
+    toString() {
+        return `[${this.value} of ${this.suite}]`;
+    }
 }
 exports.Card = Card;
 class Deck {

@@ -50,12 +50,25 @@ class Player {
     allIn() {
         console.log(`${this.name} has all in`);
         this.hasDoneAllIn = true;
+        this.balance = 0;
         return "all-in";
+    }
+    bet() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const betValue = yield (0, promptValueSchema_1.askForBet)();
+            this.balance -= betValue;
+            return { message: "bet", value: betValue };
+        });
     }
     smallBlind() {
         return __awaiter(this, void 0, void 0, function* () {
             console.log(`${this.name} has small blind`);
             const value = yield (0, promptValueSchema_1.askForSmallBlind)();
+            this.balance -= value;
+            if (this.balance < value) {
+                this.allIn();
+                return this.balance;
+            }
             return value;
         });
     }
@@ -63,6 +76,11 @@ class Player {
         return __awaiter(this, void 0, void 0, function* () {
             console.log(`${this.name} has big blind`);
             const value = yield (0, promptValueSchema_1.askForLargeBlind)(smallBindValue);
+            this.balance -= value;
+            if (this.balance < value) {
+                this.allIn();
+                return this.balance;
+            }
             return value;
         });
     }
@@ -90,12 +108,12 @@ class Player {
             switch (action) {
                 case "call":
                     return this.balance < currentBet ?
-                        { message: "all-in", value: this.balance } :
+                        { message: this.allIn(), value: this.balance } :
                         { message: this.call(currentBet), value: currentBet };
                 case "raise":
                     const raiseValue = yield (0, promptValueSchema_1.askForBet)();
                     return this.balance < raiseValue ?
-                        { message: "all-in", value: this.balance } :
+                        { message: this.allIn(), value: this.balance } :
                         { message: this.raise(raiseValue), value: raiseValue };
                 case "fold":
                     return { message: this.fold(), value: 0 };
@@ -117,12 +135,14 @@ class Player {
                 case "fold":
                     return { message: this.fold(), value: 0 };
                 case "bet":
-                    const betValue = yield (0, promptValueSchema_1.askForBet)();
-                    return { message: "bet", value: betValue };
+                    return yield this.bet();
                 default:
                     return { message: "Invalid action", value: -1 };
             }
         });
+    }
+    toString() {
+        return `${this.name} (${this.balance}) ${this.hand.map(card => card.toString()).join(", ")}`;
     }
 }
 exports.Player = Player;

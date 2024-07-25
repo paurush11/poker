@@ -10,6 +10,7 @@ export declare class Card {
     getValue(): CardValue;
     getSuite(): CardSuite;
     getRank(): number;
+    toString(): string;
 }
 export declare class Deck {
     private cards;

@@ -59,14 +59,22 @@ class Poker {
         });
     }
     start() {
-        // add players
-        this.addAllPlayers();
-        this.sortPlayers();
-        this.dealer.sortDeck();
-        this.dealer.shuffle();
-        if (this.gameFormat === "TexasHoldem") {
-            this.startTexasGame();
-        }
+        return __awaiter(this, void 0, void 0, function* () {
+            // add players
+            yield this.addAllPlayers();
+            this.sortPlayers();
+            this.dealer.sortDeck();
+            this.dealer.shuffle();
+            if (this.gameFormat === "TexasHoldem") {
+                yield this.startTexasGame();
+            }
+        });
+    }
+    displayWinner() {
+        const winner = this.predictWinner();
+        console.log(`Winner is ${winner}`);
+        console.log(`Total money won ${this.totalMoneySpent}`);
+        winner.balance += this.totalMoneySpent;
     }
     startTexasGame() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -80,33 +88,49 @@ class Poker {
             console.log("Blinds called");
             console.log("Place a bet");
             // place a bet
-            this.bet();
+            const responseOne = yield this.bet();
+            if (responseOne) {
+                this.displayWinner();
+                return;
+            }
             console.log("Bet placed");
             console.log("Deal at the table");
             // flop
             this.dealAtTheTable(true);
             // post flop betting round
             console.log("Place a bet");
-            this.bet();
+            const responseTwo = yield this.bet();
+            if (responseTwo) {
+                this.displayWinner();
+                return;
+            }
             console.log("Bet placed");
             console.log("Deal at the table");
             //  Now put a card on the table
             this.dealAtTheTable(false);
             // bet again
             console.log("Place a bet");
-            this.bet();
+            const responseThree = yield this.bet();
+            if (responseThree) {
+                this.displayWinner();
+                return;
+            }
             console.log("Bet placed");
             console.log("Deal at the table");
             // put river card at table
             this.dealAtTheTable(false);
             // bet final time
             console.log("Place a bet river");
-            this.bet();
+            const responseFour = yield this.bet();
+            if (responseFour) {
+                this.displayWinner();
+                return;
+            }
             console.log("Bet placed");
             console.log("Showdown");
             // showdown
-            const winner = this.predictWinner();
-            console.log(`Winner is ${winner}`);
+            this.displayWinner();
+            return;
         });
     }
     callBlinds() {
@@ -117,20 +141,29 @@ class Poker {
             // he can choose diff actions
             const smallBindValue = yield this.players[this.currentPlayerIndex].smallBlind();
             this.playerBets.set(this.players[this.currentPlayerIndex].id, smallBindValue);
+            this.currentPlayerIndex += 1;
             //ask prompt to choose small blind
-            const bigBlindValue = yield this.players[this.currentPlayerIndex + 1].bigBlind(smallBindValue);
-            this.playerBets.set(this.players[this.currentPlayerIndex + 1].id, bigBlindValue);
+            const bigBlindValue = yield this.players[this.currentPlayerIndex].bigBlind(smallBindValue);
+            this.playerBets.set(this.players[this.currentPlayerIndex].id, bigBlindValue);
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
             this.currentStake = bigBlindValue;
             //ask prompt to choose big blind
-            this.currentPlayerIndex += 2;
         });
     }
     bet() {
         return __awaiter(this, void 0, void 0, function* () {
+            console.log("Community cards are");
+            this.communityCards.forEach(card => console.log(card));
             let hasBetBeenMade = this.currentStake !== 0;
             let everyOneAtSameLevel = false;
+            const hasChecked = new Map(this.players.map(player => [player.id, false])); // Tracking checks
             while (!everyOneAtSameLevel) {
                 let currentPlayer = this.players[this.currentPlayerIndex];
+                console.log("Current player is", this.players[this.currentPlayerIndex].name);
+                this.players[this.currentPlayerIndex].hand.forEach(card => console.log(card));
+                if (this.players.length === 1) {
+                    return true;
+                }
                 if (currentPlayer.hasFolded || currentPlayer.hasDoneAllIn) {
                     this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
                     continue;
@@ -157,6 +190,7 @@ class Poker {
                             continue;
                         }
                         this.playerBets.set(currentPlayer.id, value);
+                        hasChecked.clear();
                         // value is same as current stake
                         break;
                     case "bet":
@@ -167,6 +201,7 @@ class Poker {
                         this.playerBets.set(currentPlayer.id, value);
                         this.currentStake = value;
                         hasBetBeenMade = true;
+                        hasChecked.clear();
                         break;
                     case "raised":
                         if (!hasBetBeenMade) {
@@ -176,6 +211,7 @@ class Poker {
                         this.playerBets.set(currentPlayer.id, value);
                         // value is greater than current stake
                         this.currentStake = value;
+                        hasChecked.clear();
                         break;
                     case "all-in":
                         this.playerBets.set(currentPlayer.id, value);
@@ -184,12 +220,14 @@ class Poker {
                             this.currentStake = value;
                         }
                         hasBetBeenMade = true;
+                        hasChecked.clear();
                         break;
                     case "checked":
                         if (hasBetBeenMade) {
                             console.error("Cannot check in preflop or when a bet has been made");
                             continue;
                         }
+                        hasChecked.set(currentPlayer.id, true);
                         // No action needed for check
                         break;
                     default:
@@ -198,10 +236,20 @@ class Poker {
                 }
                 // increment iterator
                 this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-                everyOneAtSameLevel = this.players.every(player => player.hasFolded || player.hasDoneAllIn || this.playerBets.get(player.id) === this.currentStake || (!hasBetBeenMade && player.hasChecked));
+                console.log(this.playerBets);
+                console.log(this.currentStake);
+                everyOneAtSameLevel = this.players.every(player => player.hasFolded ||
+                    player.hasDoneAllIn ||
+                    this.playerBets.get(player.id) === this.currentStake ||
+                    (!hasBetBeenMade && player.hasChecked));
+                const arr = [...hasChecked.values()];
+                if (arr.length)
+                    everyOneAtSameLevel = arr.length > 0 && arr.every(v => v) && !hasBetBeenMade;
             }
             this.currentPlayerIndex = 0;
             this.players.forEach(player => player.hasChecked = false);
+            [...this.playerBets.values()].forEach(value => this.totalMoneySpent += value);
+            this.playerBets.clear();
         });
     }
     dealAtTheTable(preFlop) {
@@ -251,6 +299,11 @@ class Poker {
             }
         });
         return winner;
+    }
+    toString() {
+        let result = `Poker game with ${this.players.length} players`;
+        result += `\nCommunity cards: ${this.communityCards.join(', ')}`;
+        return result;
     }
 }
 exports.Poker = Poker;

@@ -16,13 +16,15 @@ export declare class Poker {
     addAllPlayers(): Promise<void>;
     addPlayer(player: Player): void;
     sortPlayers(): void;
-    start(): void;
+    start(): Promise<void>;
+    displayWinner(): void;
     startTexasGame(): Promise<void>;
     callBlinds(): Promise<void>;
-    bet(): Promise<void>;
+    bet(): Promise<true | undefined>;
     dealAtTheTable(preFlop: Boolean): void;
     dealCardsToPlayers(times: number): void;
     preFlop(): void;
     rankPlayers(): void;
     predictWinner(): Player;
+    toString(): string;
 }

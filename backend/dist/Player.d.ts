@@ -15,6 +15,10 @@ export declare class Player {
     call(amount: number): "called";
     raise(amount: number): "raised";
     allIn(): "all-in";
+    bet(): Promise<{
+        message: "bet";
+        value: number;
+    }>;
     smallBlind(): Promise<number>;
     bigBlind(smallBindValue: number): Promise<number>;
     askForAction(currentBet: number): Promise<{
@@ -29,4 +33,5 @@ export declare class Player {
         message: "checked" | "folded" | "bet" | "Invalid action";
         value: number;
     }>;
+    toString(): string;
 }

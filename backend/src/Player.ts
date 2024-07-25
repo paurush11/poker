@@ -63,12 +63,20 @@ export class Player {
         console.log(`${this.name} has small blind`);
         const value = await askForSmallBlind();
         this.balance -= value
+        if (this.balance < value) {
+            this.allIn();
+            return this.balance;
+        }
         return value;
     }
     async bigBlind(smallBindValue: number) {
         console.log(`${this.name} has big blind`);
         const value = await askForLargeBlind(smallBindValue);
         this.balance -= value
+        if (this.balance < value) {
+            this.allIn();
+            return this.balance;
+        }
         return value;
     }
     async askForAction(currentBet: number): Promise<{

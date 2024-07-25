@@ -11,8 +11,6 @@ const main = () => {
     const pokerGame = Poker.createInstance("TexasHoldem" as gameFormat);
     pokerGame.start();
 
-
-
 }
 
 main();

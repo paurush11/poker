@@ -37,6 +37,10 @@ export class Card {
         return this.rank;
     }
 
+    toString(): string {
+        return `[${this.value} of ${this.suite}]`;
+    }
+
 }
 
 export class Deck {

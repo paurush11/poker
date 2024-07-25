@@ -70,6 +70,8 @@ export class Poker {
     displayWinner() {
         const winner = this.predictWinner();
         console.log(`Winner is ${winner}`)
+        console.log(`Total money won ${this.totalMoneySpent}`)
+        winner.balance += this.totalMoneySpent;
     }
     async startTexasGame() {
 
@@ -149,8 +151,7 @@ export class Poker {
 
     }
     async bet() {
-        console.log("Current player is", this.players[this.currentPlayerIndex].name)
-        this.players[this.currentPlayerIndex].hand.forEach(card => console.log(card))
+
         console.log("Community cards are")
         this.communityCards.forEach(card => console.log(card))
         let hasBetBeenMade = this.currentStake !== 0;
@@ -159,6 +160,8 @@ export class Poker {
 
         while (!everyOneAtSameLevel) {
             let currentPlayer = this.players[this.currentPlayerIndex];
+            console.log("Current player is", this.players[this.currentPlayerIndex].name)
+            this.players[this.currentPlayerIndex].hand.forEach(card => console.log(card))
 
             if (this.players.length === 1) {
                 return true;
@@ -256,6 +259,8 @@ export class Poker {
 
         this.currentPlayerIndex = 0;
         this.players.forEach(player => player.hasChecked = false);
+        [...this.playerBets.values()].forEach(value => this.totalMoneySpent += value)
+        this.playerBets.clear();
     }
     dealAtTheTable(preFlop: Boolean) {
         if (preFlop) {
@@ -310,6 +315,12 @@ export class Poker {
         });
 
         return winner;
+    }
+
+    toString(): string {
+        let result = `Poker game with ${this.players.length} players`;
+        result += `\nCommunity cards: ${this.communityCards.join(', ')}`;
+        return result;
     }
 }
 

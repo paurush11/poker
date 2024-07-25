@@ -48,16 +48,27 @@ export class Player {
     allIn(): "all-in" {
         console.log(`${this.name} has all in`);
         this.hasDoneAllIn = true;
+        this.balance = 0;
         return "all-in"
+    }
+    async bet(): Promise<{
+        message: "bet",
+        value: number
+    }> {
+        const betValue = await askForBet();
+        this.balance -= betValue;
+        return { message: "bet", value: betValue };
     }
     async smallBlind() {
         console.log(`${this.name} has small blind`);
         const value = await askForSmallBlind();
+        this.balance -= value
         return value;
     }
     async bigBlind(smallBindValue: number) {
         console.log(`${this.name} has big blind`);
         const value = await askForLargeBlind(smallBindValue);
+        this.balance -= value
         return value;
     }
     async askForAction(currentBet: number): Promise<{
@@ -69,14 +80,13 @@ export class Player {
         }
 
         console.log(`${this.name} has asked for action`);
-        
+
         if (currentBet === 0) {
             return this.askForActionWhenNoBetSet();
         } else {
             return this.askForActionWhenBetSet(currentBet);
         }
     }
-
     async askForActionWhenBetSet(currentBet: number): Promise<{
         message: "folded" | "called" | "raised" | "all-in" | "Invalid action",
         value: number
@@ -90,13 +100,13 @@ export class Player {
         switch (action) {
             case "call":
                 return this.balance < currentBet ?
-                    { message: "all-in", value: this.balance } :
+                    { message: this.allIn(), value: this.balance } :
                     { message: this.call(currentBet), value: currentBet };
 
             case "raise":
                 const raiseValue = await askForBet();
                 return this.balance < raiseValue ?
-                    { message: "all-in", value: this.balance } :
+                    { message: this.allIn(), value: this.balance } :
                     { message: this.raise(raiseValue), value: raiseValue };
 
             case "fold":
@@ -120,10 +130,13 @@ export class Player {
             case "fold":
                 return { message: this.fold(), value: 0 };
             case "bet":
-                const betValue = await askForBet();
-                return { message: "bet", value: betValue };
+                return await this.bet();
             default:
                 return { message: "Invalid action", value: -1 };
         }
+    }
+
+    toString(): string {
+        return `${this.name} (${this.balance}) ${this.hand.map(card => card.toString()).join(", ")}`;
     }
 }

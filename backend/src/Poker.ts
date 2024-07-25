@@ -67,7 +67,12 @@ export class Poker {
             await this.startTexasGame();
         }
     }
+    displayWinner() {
+        const winner = this.predictWinner();
+        console.log(`Winner is ${winner}`)
+    }
     async startTexasGame() {
+
         //deal whole cards
         console.log("Starting the game")
         this.preFlop();
@@ -78,33 +83,52 @@ export class Poker {
         console.log("Blinds called")
         console.log("Place a bet")
         // place a bet
-        await this.bet();
+        const responseOne = await this.bet();
+        if (responseOne) {
+            this.displayWinner()
+            return;
+        }
         console.log("Bet placed")
         console.log("Deal at the table")
         // flop
         this.dealAtTheTable(true);
         // post flop betting round
         console.log("Place a bet")
-        await this.bet();
+        const responseTwo = await this.bet();
+        if (responseTwo) {
+            this.displayWinner()
+            return;
+        }
+
         console.log("Bet placed")
         console.log("Deal at the table")
         //  Now put a card on the table
         this.dealAtTheTable(false);
         // bet again
         console.log("Place a bet")
-        await this.bet();
+        const responseThree = await this.bet();
+        if (responseThree) {
+            this.displayWinner()
+            return;
+        }
+
         console.log("Bet placed")
         console.log("Deal at the table")
         // put river card at table
         this.dealAtTheTable(false);
         // bet final time
         console.log("Place a bet river")
-        await this.bet();
+        const responseFour = await this.bet();
+        if (responseFour) {
+            this.displayWinner()
+            return;
+        }
+
         console.log("Bet placed")
         console.log("Showdown")
         // showdown
-        const winner = this.predictWinner();
-        console.log(`Winner is ${winner}`)
+        this.displayWinner()
+        return;
 
     }
     async callBlinds() {
@@ -135,6 +159,10 @@ export class Poker {
 
         while (!everyOneAtSameLevel) {
             let currentPlayer = this.players[this.currentPlayerIndex];
+
+            if (this.players.length === 1) {
+                return true;
+            }
 
             if (currentPlayer.hasFolded || currentPlayer.hasDoneAllIn) {
                 this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
@@ -211,15 +239,19 @@ export class Poker {
 
             // increment iterator
             this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-
+            console.log(this.playerBets)
+            console.log(this.currentStake)
             everyOneAtSameLevel = this.players.every(player =>
                 player.hasFolded ||
                 player.hasDoneAllIn ||
                 this.playerBets.get(player.id) === this.currentStake ||
                 (!hasBetBeenMade && player.hasChecked)
             );
+
             const arr = [...hasChecked.values()]
-            everyOneAtSameLevel = arr.length > 0 && arr.every(v => v) && !hasBetBeenMade;
+            if (arr.length)
+                everyOneAtSameLevel = arr.length > 0 && arr.every(v => v) && !hasBetBeenMade;
+
         }
 
         this.currentPlayerIndex = 0;

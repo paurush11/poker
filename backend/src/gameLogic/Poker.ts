@@ -4,6 +4,10 @@ import { HandEvaluator } from "./HandEvaluator";
 import { Player } from "./Player";
 import { askForNoOfPlayers, askForPlayerDetails } from "./promptValueSchema";
 
+type PokerMoney = 5 | 10 | 15 | 25 | 50 | 100;
+type BetMessageWhenBetSet = "raise" | "call" | "fold" | "all-in";
+type BetMessageWhenNoBetSet = "check" | "bet";
+
 export class Poker {
     private static instance: Poker | null = null;
     static createInstance(gameFormat: gameFormat) {
@@ -21,6 +25,7 @@ export class Poker {
     private totalMoneySpent: number;
     private currentPlayerIndex: number;
     private communityCards: Card[];
+    private playerChecked: Map<string, boolean>;
     private constructor(gameFormat: gameFormat) {
         this.dealer = new Dealer();
         this.players = [];
@@ -31,6 +36,18 @@ export class Poker {
         this.communityCards = [];
         this.totalMoneySpent = 0;
         this.playerRankings = new Map();
+        this.playerChecked = new Map();
+    }
+    getCommunityCards() {
+        return this.communityCards;
+    }
+
+    getCards(playerId: string): Card[] {
+        const player = this.players.find(player => player.id === playerId);
+        if (player) {
+            return player.hand;
+        }
+        return [];
     }
 
     async addAllPlayers() {
@@ -41,12 +58,27 @@ export class Poker {
             this.addPlayer(newPlayer);
         }
     }
-
+    addPlayerUpdate(player: Player) {
+        if (this.players.length >= 6) {
+            return {
+                code: 4,
+                message: "Cannot add more players only 6 allowed"
+            }
+        }
+        this.players.push(player);
+        return {
+            code: 5,
+            message: "Player added successfully"
+        }
+    }
     addPlayer(player: Player) {
         try {
             this.players.push(player);
             if (this.players.length > 5) {
-                throw new Error("Too many players");
+                return {
+                    code: 4,
+                    message: "Cannot add more players only 6 allowed"
+                }
             }
         } catch (Error) {
             console.log("Cannot add more players only 6 allowed")
@@ -56,6 +88,11 @@ export class Poker {
         this.players.sort((a, b) => {
             return a.addedTime.getTime() - b.addedTime.getTime();
         });
+        return this.players;
+    }
+    dealerStartGame() {
+        this.dealer.sortDeck();
+        this.dealer.shuffle();
     }
     async start() {
         // add players
@@ -72,6 +109,7 @@ export class Poker {
         console.log(`Winner is ${winner}`)
         console.log(`Total money won ${this.totalMoneySpent}`)
         winner.balance += this.totalMoneySpent;
+        return winner;
     }
     async startTexasGame() {
 
@@ -133,6 +171,136 @@ export class Poker {
         return;
 
     }
+    smallBindUpdate(amount: number) {
+        const smallBindValue = amount;
+        this.playerBets.set(this.players[this.currentPlayerIndex].id, smallBindValue)
+        this.currentPlayerIndex += 1;
+        return {
+            code: 4,
+            message: "Small blind placed"
+        }
+    }
+    bigBindUpdate(amount: number) {
+        const bigBlindValue = amount;
+        this.playerBets.set(this.players[this.currentPlayerIndex].id, bigBlindValue)
+        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+        this.currentStake = bigBlindValue;
+        return {
+            code: 5,
+            message: "Big blind placed"
+        }
+    }
+    updateCurrentPlayerIndex() {
+        this.currentPlayerIndex = 0;
+    }
+    updatePlayerBets() {
+        [...this.playerBets.values()].forEach(value => this.totalMoneySpent += value)
+        this.playerBets.clear();
+    }
+    updateCheckedStatus() {
+        this.playerChecked.forEach((_value, key) => {
+            this.playerChecked.set(key, false);
+        })
+    }
+    checkConsistency() {
+        const value = [...this.playerBets.values()].every((a) => a === this.currentStake);
+        if (value) {
+            return true;
+        }
+        return false;
+    }
+
+    betUpdateOnNoBetSet(message: BetMessageWhenNoBetSet, money: PokerMoney) {
+        if (message === "check") {
+            this.playerChecked.set(this.players[this.currentPlayerIndex].id, true);
+            const value = [...this.playerBets.values()].reduce((a, b) => a & b);
+            if (value === 0) {
+                this.updateCheckedStatus();
+                this.updatePlayerBets();
+                this.updateCurrentPlayerIndex()
+                return {
+                    code: 12,
+                    message: "Every Player has checked, move to next round"
+                }
+            }
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+            return {
+                code: 11,
+                message: "Checked"
+            }
+        } else {
+            // const isLastPlayer = [...this.playerBets.values()] // iterate through the map to see if he is the only one left to bet or checked
+            this.playerBets.set(this.players[this.currentPlayerIndex].id, money);
+            this.currentStake = money;
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+            return {
+                code: 10,
+                message: "Bet placed"
+            }
+        }
+    }
+
+    betUpdateOnPrevBet(message: BetMessageWhenBetSet, money: PokerMoney) {
+        switch (message) {
+            case "raise":
+            case "call":
+                this.playerBets.set(this.players[this.currentPlayerIndex].id, money);
+                this.currentStake = money;
+                // check if every player has betted same money or not
+                let everyPlayerBetSame = this.checkConsistency();
+                if (everyPlayerBetSame) {
+                    this.updateCheckedStatus();
+                    this.updatePlayerBets();
+                    this.updateCurrentPlayerIndex()
+                    return {
+                        code: 2,
+                        message: "Move to next round"
+                    }
+                }
+                return {
+                    code: 9,
+                    message: "Call placed"
+                }
+            case "fold":
+                this.players[this.currentPlayerIndex].fold();
+                this.players.splice(this.currentPlayerIndex, 1);
+                if (this.players.length <= 1) {
+                    const winner = this.displayWinner();
+                    return {
+                        code: 1,
+                        message: "Game over",
+                        winner: winner
+                    }
+                }
+                everyPlayerBetSame = this.checkConsistency();
+                if (everyPlayerBetSame) {
+                    this.updateCheckedStatus();
+                    this.updatePlayerBets();
+                    this.updateCurrentPlayerIndex()
+                    return {
+                        code: 3,
+                        message: "Folded, Move to next round"
+                    }
+                }
+                this.currentPlayerIndex = (this.currentPlayerIndex === 0 ? this.players.length : this.currentPlayerIndex) - 1;
+
+                return {
+                    code: 7,
+                    message: "Folded"
+                }
+            case "all-in":
+                this.playerBets.set(this.players[this.currentPlayerIndex].id, money);
+                if (this.currentStake < money) {
+                    this.currentStake = money;
+                }
+                return {
+                    code: 8,
+                    message: "All in"
+                }
+        }
+
+    }
+
     async callBlinds() {
         // first player will bid a small amount
         // second will bid a big amount

@@ -23,6 +23,14 @@
   --input: 158 30% 50%;
   --ring: 158 100% 71%;
   --radius: 1rem;
+  --success: 142 76% 36%;
+  --success-foreground: 142 100% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 38 100% 98%;
+  --info: 199 89% 48%;
+  --info-foreground: 199 100% 98%;
+  --disabled: 220 13% 91%;
+  --disabled-foreground: 220 13% 30%;
 }
 
 .dark {
@@ -46,4 +54,12 @@
   --input: 158 30% 50%;
   --ring: 158 100% 71%;
   --radius: 1rem;
+  --success: 142 76% 45%;
+  --success-foreground: 142 100% 98%;
+  --warning: 38 92% 60%;
+  --warning-foreground: 38 100% 98%;
+  --info: 199 89% 58%;
+  --info-foreground: 199 100% 98%;
+  --disabled: 220 13% 20%;
+  --disabled-foreground: 220 13% 70%;
 }

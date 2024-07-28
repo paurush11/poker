@@ -4,33 +4,18 @@ import { Poker } from './gameLogic/Poker';
 import { gameFormat } from './gameLogic/Card';
 import { createRoom, deleteRoom, getRoom, joinRoom, leaveRoom } from './roomLogic/createRoom';
 import { Player } from './gameLogic/Player';
-
-
-interface GameStatusDetails {
-    message: string;
-}
-interface Response {
-    status: "success" | "error";
-    message: string;
-    data?: any;
-    error?: string;
-}
-
-const gameStatusMap = new Map<number, GameStatusDetails>([
-    [1, { message: "Game over" }],
-    [2, { message: "Move to next round" }],
-    [3, { message: "Folded, Move to next round" }],
-    [4, { message: "Cannot add more players only 6 allowed" }],
-    [5, { message: "Player added successfully" }],
-    [7, { message: "Folded" }],
-    [8, { message: "All in" }],
-    [9, { message: "Call placed" }],
-    [10, { message: "Bet placed" }],
-    [11, { message: "Checked" }],
-    [12, { message: "Every Player has checked, move to next round" }],
-]);
+import { handlePokerAction } from './WebSocketLogic/handlePokerAction';
+import cors from 'cors'
+import { RoomState } from './roomLogic/roomstate';
 
 const app = express();
+app.use(express.json());
+app.use(cors(
+    {
+        origin: "http://localhost:5173",
+        credentials: true,
+    }
+))
 const server = app.listen(3000, () => {
     console.log('Listening on port 3000');
 });
@@ -39,84 +24,193 @@ const wss = new WebSocketServer({ server });
 
 // Route to create a room
 app.post('/create-room', (req, res) => {
-    const noOfPlayers = Number(req.query.numberOfPlayers);
+    const noOfPlayers = Number(req.body.numberOfPlayers);
     if (!noOfPlayers || isNaN(noOfPlayers)) {
-        res.status(400).send("Please provide a number of players.");
+        return res.status(400).json({
+            status: "error",
+            message: "Invalid input: Please provide a valid number of players.",
+            error: "Invalid number provided."
+        });
     }
+
     if (noOfPlayers > 6) {
-        res.status(400).send("Maximum number of players is 6.");
-    } else if (noOfPlayers < 2) {
-        res.status(400).send("Minimum number of players is 2.");
+        return res.status(400).json({
+            status: "error",
+            message: "Maximum number of players is 6.",
+            error: "Number exceeds maximum limit."
+        });
     }
-    const room = createRoom(noOfPlayers);
+
+    if (noOfPlayers < 2) {
+        return res.status(400).json({
+            status: "error",
+            message: "Minimum number of players is 2.",
+            error: "Number falls below minimum requirement."
+        });
+    }
+
+    const name = req.body.username as string;
+    if (!name) {
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a name.",
+            error: "Name missing from request."
+        });
+    }
+
+    const balance = Number(req.body.balance);
+    if (!balance || isNaN(balance)) {
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a valid balance.",
+            error: "Balance is invalid or missing."
+        });
+    }
+    const player = new Player(name, balance); // Assuming Player is a constructor you've defined elsewhere
+    const room = createRoom(noOfPlayers, player); // Implement this function to handle room creation
+
     if (room) {
-        res.status(200).send(`Room ${room.roomId} created successfully.`);
+        res.status(200).json({
+            status: "success",
+            message: "Room created successfully",
+            data: { roomId: room.roomId, playerId: player.id } // Assume createRoom returns an object with roomId
+        });
     } else {
-        res.status(400).send(`Room  already exists.`);
+        res.status(400).json({
+            status: "error",
+            message: "Room creation failed",
+            error: "Room already exists."
+        });
     }
 });
-
 // Route to join a room
 app.post('/join-room', (req, res) => {
-    const roomId = req.query.roomId as string;
+    const roomId = req.body.roomId as string;
     if (!roomId) {
-        res.status(400).send("Please provide a room id.");
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a room id.",
+            error: "Room ID missing from request."
+        });
     }
-    const name = req.query.name as string;
+
+    const name = req.body.username as string;
     if (!name) {
-        res.status(400).send("Please provide a name.");
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a name.",
+            error: "Name missing from request."
+        });
     }
-    const balance = Number(req.query.balance);
+
+    const balance = Number(req.body.balance);
     if (!balance || isNaN(balance)) {
-        res.status(400).send("Please provide a balance.");
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a valid balance.",
+            error: "Balance is invalid or missing."
+        });
     }
-    const player = new Player(name, balance);
-    const response = joinRoom(roomId, player);
+
+    const player = new Player(name, balance); // Assuming Player is a constructor you've defined elsewhere
+    const response = joinRoom(roomId, player); // Assuming joinRoom is a function that attempts to add a player to a room and returns an object with 'error' or 'message'
+
     if (response.error) {
-        res.status(404).send(response.error);
+        res.status(404).json({
+            status: "error",
+            message: "Failed to join room.",
+            error: response.error
+        });
     } else {
-        res.status(200).send(response.message);
+        res.status(200).json({
+            status: "success",
+            message: response.message,
+            data: { roomId: roomId, playerId: player.id } // Optionally include player details or other relevant data
+        });
     }
 });
-
 // Route to leave a room
 app.post('/leave-room', (req, res) => {
-    const roomId = req.query.roomId as string;
+    const roomId = req.body.roomId as string;
     if (!roomId) {
-        res.status(400).send("Please provide a room id.");
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a room id.",
+            error: "Room ID is missing from request."
+        });
     }
-    const clientId = req.query.clientId as string;
+
+    const clientId = req.body.clientId as string;
     if (!clientId) {
-        res.status(400).send("Please provide a clientId id.");
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a clientId.",
+            error: "Client ID is missing from request."
+        });
     }
-    const response = leaveRoom(roomId, clientId);
+
+    const response = leaveRoom(roomId, clientId); // Assuming leaveRoom is a function that attempts to remove a client from a room and returns an object with 'error' or 'message'
+
     if (response.error) {
-        res.status(404).send(response.error);
+        res.status(404).json({
+            status: "error",
+            message: "Failed to leave room.",
+            error: response.error
+        });
     } else {
-        res.status(200).send(response.message);
+        res.status(200).json({
+            status: "success",
+            message: response.message,
+            data: { roomId: roomId, clientId: clientId } // Optionally include roomId and clientId or other relevant data
+        });
     }
 });
 
 app.post('/delete-room', (req, res) => {
     const roomId = req.query.roomId as string;
     if (!roomId) {
-        res.status(400).send("Please provide a room id.");
+        return res.status(400).json({
+            status: "error",
+            message: "Please provide a room id.",
+            error: "Room ID is missing from request."
+        });
     }
-    const response = deleteRoom(roomId);
+
+    const response = deleteRoom(roomId); // Assuming deleteRoom tries to delete a room and returns an object with 'error' or 'message'
+
     if (response.error) {
-        res.status(404).send(response.error);
+        res.status(404).json({
+            status: "error",
+            message: "Failed to delete room.",
+            error: response.error
+        });
     } else {
-        res.status(200).send(response.message);
+        res.status(200).json({
+            status: "success",
+            message: response.message,
+            data: { roomId: roomId } // Include roomId or other relevant data if needed
+        });
     }
 });
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
-    const pokerGame = Poker.createInstance("TexasHoldem" as gameFormat);
+    const pokerGame = new Poker("TexasHoldem" as gameFormat);
+
+    console.log(RoomState.getInstance().getRooms());
     ws.on('message', (message: string) => {
         console.log(`Received message: ${message}`);
         const response = handlePokerAction(message, pokerGame);
-        ws.send(JSON.stringify(response));
+        if (response.code === 5) {
+            ws.send(JSON.stringify(response));
+        } else {
+            wss?.clients.forEach(client => {
+                client.send(JSON.stringify(response));
+            });
+        }
+        console.log(response);
+
+
     });
     ws.on('error', (err) => {
         console.log(`Error: ${err}`);
@@ -127,125 +221,3 @@ wss.on('connection', (ws) => {
 });
 
 
-const handlePokerAction = (message: string, pokerGame: Poker): Response => {
-    const { action, payload } = JSON.parse(message);
-    const { prevBetSet, betMessage, betAmount, playerId, isPreFlop, isRiver, smallBlindValue, bigBlindValue, roomId, nextStep } = payload;
-    switch (action) {
-        case 'start-game':
-            const room = getRoom(roomId);
-            if (room === undefined) {
-                return {
-                    status: "error",
-                    message: "Invalid action",
-                    error: "Room not found"
-                }
-            }
-            room.players?.forEach(player => pokerGame.addPlayer(player));
-            const playersSorted = pokerGame.sortPlayers();
-            pokerGame.dealerStartGame()
-            return {
-                status: "success",
-                message: "Game started, All players are added, sorted and dealers have shuffled their cards",
-                data: {
-                    sortedPlayers: playersSorted,
-                    nextUpdate: nextUpdates.SMALL_BLIND_UPDATE
-                }
-            }
-        // pre flop done
-        case 'small-binding-update':
-            const smallBlind = pokerGame.smallBindUpdate(smallBlindValue);
-            return {
-                status: "success",
-                message: smallBlind.message,
-                data: {
-                    smallBlindValue: smallBlindValue,
-                    nextUpdates: nextUpdates.BIG_BLIND_UPDATE
-                }
-            }
-        case 'big-blind-update':
-            const bigBlind = pokerGame.bigBindUpdate(bigBlindValue);
-            return {
-                status: "success",
-                message: bigBlind.message,
-                data: {
-                    bigBlindValue: bigBlindValue,
-                    nextUpdates: nextUpdates.BET
-                }
-            }
-        // forced binds done
-        case "get-cards":
-            const playerCards = pokerGame.getCards(playerId);
-            const communityCards = pokerGame.getCommunityCards();
-            const response = {
-                "playerCards": playerCards,
-                "communityCards": communityCards
-            };
-            return {
-                status: "success",
-                message: "Cards sent successfully",
-                data: response
-            }
-        case 'bet':
-            let code = 0, message = "";
-            if (prevBetSet) {
-                const response = pokerGame.betUpdateOnPrevBet(betMessage, betAmount);
-                code = response.code;
-                message = response.message;
-                if (code === 1) {
-                    return {
-                        status: "success",
-                        message: `Winner is ${response.message}`,
-                        data: {
-                            winner: response.winner,
-                            nextUpdate: nextUpdates.END_GAME
-                        }
-                    }
-                }
-            } else {
-                const response = pokerGame.betUpdateOnNoBetSet(betMessage, betAmount);
-                code = response.code;
-                message = response.message;
-            }
-            if (isRiver) {
-                const winner = pokerGame.displayWinner();
-                const winner_message = winner ? winner.name : "No one";
-                return {
-                    message: `Winner is ${winner_message}`,
-                    status: "success",
-                    data: {
-                        winner: winner,
-                        nextUpdate: nextUpdates.END_GAME
-                    }
-                }
-            }
-            if (isPreFlop) {
-                pokerGame.dealAtTheTable(true);
-            } else {
-                pokerGame.dealAtTheTable(false);
-            }
-            return {
-                status: "success",
-                message: message,
-                data: {
-                    nextUpdate: nextUpdates.BET,
-                    code: code
-                }
-            }
-        // ill send the response to the client, every client will then request to get cards
-    }
-    return {
-        status: "error",
-        message: "Invalid action",
-        error: "Invalid action"
-    }
-};
-
-
-enum nextUpdates {
-    START_GAME = "START_GAME",
-    SMALL_BLIND_UPDATE = "SMALL_BLIND_UPDATE",
-    BIG_BLIND_UPDATE = "BIG_BLIND_UPDATE",
-    BET = "BET",
-    GET_CARDS = "GET_CARDS",
-    END_GAME = "END_GAME"
-}

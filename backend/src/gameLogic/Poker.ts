@@ -9,13 +9,7 @@ type BetMessageWhenBetSet = "raise" | "call" | "fold" | "all-in";
 type BetMessageWhenNoBetSet = "check" | "bet";
 
 export class Poker {
-    private static instance: Poker | null = null;
-    static createInstance(gameFormat: gameFormat) {
-        if (Poker.instance === null) {
-            Poker.instance = new Poker(gameFormat);
-        }
-        return Poker.instance;
-    }
+
     private dealer: Dealer;
     private players: Player[];
     private gameFormat: gameFormat
@@ -26,7 +20,7 @@ export class Poker {
     private currentPlayerIndex: number;
     private communityCards: Card[];
     private playerChecked: Map<string, boolean>;
-    private constructor(gameFormat: gameFormat) {
+    constructor(gameFormat: gameFormat) {
         this.dealer = new Dealer();
         this.players = [];
         this.gameFormat = gameFormat;

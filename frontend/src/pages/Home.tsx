@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/use-toast';
 import axios from 'axios';
 import React, { useState } from 'react'
 import { validateInputs } from '../lib/Interfaces';
+import { useNavigate } from 'react-router-dom';
 
 interface HomeProps {
 
@@ -11,6 +12,7 @@ interface HomeProps {
 
 const Home: React.FC<HomeProps> = ({ }) => {
     const { toast } = useToast()
+    const navigate = useNavigate();
     const [createRoomSelected, setCreateRoomSelected] = useState(true);
     const [roomId, setRoomId] = useState<string>("");
     const [balance, setBalance] = useState<number | undefined>(undefined);
@@ -88,14 +90,15 @@ const Home: React.FC<HomeProps> = ({ }) => {
     }
 
     const createRoom = async () => {
+        setLoading(true);
         try {
-
             const data = {
-                numberOfPlayers: 2,
+                numberOfPlayers: numberOfPlayers,
                 username: username,
                 balance: balance
             }
             const response = await axios.post("http://localhost:3000/create-room", data);
+            console.log(response);
             if (response && response.status === 200) {
                 // Handle success
                 console.log('Room created successfully:', response.data);
@@ -104,171 +107,171 @@ const Home: React.FC<HomeProps> = ({ }) => {
                     description: response.data.message,
                     variant: "success"
                 })
-                // return {
-                //   success: true,
-                //   message: response.data.message,
-                //   roomId: response.data.data.roomId
-                // };
+                setTimeout(() => {
+                    navigate(`/game/${response.data.data.roomId}`, { state: { playerId: response.data.data.playerId } });
+                }, 1500);
+
             } else {
-                // This else block may not be necessary if all errors are caught in catch block
+
+
                 console.error('Unexpected response', response);
                 toast({
                     title: "Error creating room",
                     description: response.data.message,
                     variant: "destructive"
                 })
-                // return { success: false, message: 'Unexpected server response' };
+
             }
 
-        } catch (e) {
+        } catch (e: any) {
+            console.error(e);
             let errorMsg = `Error creating room :- ${e}`;
             toast({
                 title: "Error creating room",
                 description: errorMsg,
                 variant: "destructive"
             })
+        } finally {
+            setLoading(false);
         }
     }
     const joinRoom = async () => {
+        setLoading(true);
         try {
+            const data = {
+                roomId: roomId,
+                username: username,
+                balance: balance
+            }
+            const response = await axios.post("http://localhost:3000/join-room", data);
+            if (response && response.status === 200) {
+                // Handle success
+                console.log('Room joined successfully:', response.data);
+                toast({
+                    title: "Room joined successfully",
+                    description: response.data.message,
+                    variant: "success"
+                })
+                setTimeout(() => {
+                    navigate(`/game/${response.data.data.roomId}`, { state: { playerId: response.data.data.playerId } });
+                }, 1500);
+
+            } else {
+
+                console.error('Unexpected response', response);
+                toast({
+                    title: "Error creating room",
+                    description: response.data.message,
+                    variant: "destructive"
+                })
+
+            }
+
 
         } catch (e) {
-            console.log(e)
+            console.error(e);
+            let errorMsg = `Error creating room :- ${e}`;
+            toast({
+                title: "Error creating room",
+                description: errorMsg,
+                variant: "destructive"
+            })
+        } finally {
+            setLoading(false);
         }
     }
     const clearError = () => {
         setErrorMessage("")
     }
 
-    const inputForName = () => {
-        return (
-            <Input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-        )
-    }
-    const inputForRoomId = () => {
-        return (
-            <Input type="text" placeholder="Room Id" value={roomId} onChange={(e) => setRoomId(e.target.value)} />
-        )
-    }
-    const inputForBalance = () => {
-        return (
-            <Input type="number" placeholder="Balance" value={balance} onChange={(e) => setBalance(parseInt(e.target.value) ?? 0)} />
-        )
-    }
-    const inputForNumberOfPlayers = () => {
-        return (
-            <Input type="number" placeholder="No of People" value={numberOfPlayers} onChange={(e) => {
-                const value = parseInt(e.target.value)
-                setNumberOfPlayers(value)
-                if (value < 2) setErrorMessage("Atleast 2 players are required")
-                else if (value > 6) setErrorMessage("Maximum 6 players are allowed")
-                else {
-                    setErrorMessage("")
-                }
-            }} />
-        )
-    }
-
-    const createRoomButton = () => {
-        return (
-            <Button
-                onClick={() => {
-                    setCreateRoomSelected(true)
-                }}
-                disabled={loading}
-                className="w-full"
-                variant={loading ? "ghost" : "secondary"}>
-                Create Room
-            </Button>
-        )
-    }
-    const joinRoomButton = () => {
-        return (
-            <Button
-                onClick={() => {
-                    setCreateRoomSelected(false)
-                }}
-                disabled={loading}
-                className="w-full"
-                variant={loading ? "ghost" : "secondary"}
-            >
-                Join Room
-            </Button>
-        )
-    }
-    const finalSubmitButton = () => {
-        return (
-            <Button onClick={async () => {
-                setLoading(true)
-                clearError()
-
-                if (createRoomSelected) {
-                    const result = validateInputs({
-                        type: "create",
-                        createRoom: {
-                            balance: balance,
-                            username: username,
-                            numberOfPlayers: numberOfPlayers
-                        }
-                    })
-                    if (!result) {
-                        setLoading(false)
-                        return
-                    }
-
-                    await createRoom()
-                } else {
-                    const result = validateInputs({
-                        type: "join",
-                        joinRoom: {
-                            balance: balance,
-                            username: username,
-                            roomId: roomId
-                        }
-                    })
-                    if (!result) {
-                        setLoading(false)
-                        return
-                    }
-                    await joinRoom()
-                }
-            }}> Submit</Button>
-        )
-    }
-    const reset = () => {
-        return (
-            <Button
-                variant={"destructive"}
-                onClick={async () => {
-                    setBalance(undefined)
-                    setRoomId("")
-                    setUsername("")
-                    setNumberOfPlayers(undefined)
-                    setErrorMessage("")
-                    setLoading(false)
-                }}> Reset</Button>
-        )
-    }
     return (
         <>
             <div className="flex min-h-screen flex-col items-center bg-foreground justify-center ">
                 <div className="flex flex-col p-10 gap-4 items-center bg-background rounded-md">
-                    {inputForName()}
-                    {inputForBalance()}
-                    {createRoomSelected && inputForNumberOfPlayers()}
+                    {<Input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />}
+                    {<Input type="number" placeholder="Balance" value={balance} onChange={(e) => setBalance(parseInt(e.target.value) ?? 0)} />}
+                    {createRoomSelected && <Input type="number" placeholder="No of People" value={numberOfPlayers} onChange={(e) => {
+                        const value = parseInt(e.target.value)
+                        setNumberOfPlayers(value)
+                        if (value < 2) setErrorMessage("Atleast 2 players are required")
+                        else if (value > 6) setErrorMessage("Maximum 6 players are allowed")
+                        else {
+                            setErrorMessage("")
+                        }
+                    }} />}
                     {!createRoomSelected}
                     {errorMessage && <p className="text-red-500">{errorMessage}</p>}
-                    {!createRoomSelected && inputForRoomId()}
+                    {!createRoomSelected && <Input type="text" placeholder="Room Id" value={roomId} onChange={(e) => setRoomId(e.target.value)} />}
                     <div className="flex p-4 gap-6">
-                        {joinRoomButton()}
-                        {createRoomButton()}
+                        {<Button
+                            onClick={() => {
+                                setCreateRoomSelected(false)
+                            }}
+                            disabled={loading}
+                            className="w-full"
+                            variant={loading ? "ghost" : "secondary"}
+                        >
+                            Join Room
+                        </Button>}
+                        {<Button
+                            onClick={() => {
+                                setCreateRoomSelected(true)
+                            }}
+                            disabled={loading}
+                            className="w-full"
+                            variant={loading ? "ghost" : "secondary"}>
+                            Create Room
+                        </Button>}
                     </div>
                     <div className="flex p-4 gap-6">
-                        {finalSubmitButton()}
-                        {errorMessage && reset()}
+                        {<Button onClick={async () => {
+                            setLoading(true)
+                            clearError()
+
+                            if (createRoomSelected) {
+                                const result = validateInputs({
+                                    type: "create",
+                                    createRoom: {
+                                        balance: balance,
+                                        username: username,
+                                        numberOfPlayers: numberOfPlayers
+                                    }
+                                })
+                                if (!result) {
+                                    setLoading(false)
+                                    return;
+                                }
+
+                                await createRoom()
+                                setLoading(false)
+                            } else {
+                                const result = validateInputs({
+                                    type: "join",
+                                    joinRoom: {
+                                        balance: balance,
+                                        username: username,
+                                        roomId: roomId
+                                    }
+                                })
+                                if (!result) {
+                                    setLoading(false)
+                                    return
+                                }
+                                await joinRoom()
+                            }
+                        }}> Submit</Button>
+                        }
+                        {errorMessage && <Button
+                            variant={"destructive"}
+                            onClick={async () => {
+                                setBalance(undefined)
+                                setRoomId("")
+                                setUsername("")
+                                setNumberOfPlayers(undefined)
+                                setErrorMessage("")
+                                setLoading(false)
+                            }}> Reset</Button>}
                     </div>
-
-
 
                 </div>
             </div>

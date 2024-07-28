@@ -203,6 +203,11 @@ wss.on('connection', (ws) => {
         const response = handlePokerAction(message, pokerGame);
         if (response.code === 5) {
             ws.send(JSON.stringify(response));
+        } else if (response.code === 2) {
+            wss?.clients.forEach(client => {
+                if (client === ws)
+                    client.send(JSON.stringify(response));
+            });
         } else {
             wss?.clients.forEach(client => {
                 client.send(JSON.stringify(response));

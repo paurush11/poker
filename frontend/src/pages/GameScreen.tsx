@@ -2,12 +2,15 @@ import { PokerActionDrawer } from '@/components/PokerDrawer';
 import { CenterArea, LowerArea, UpperArea } from '@/components/PokerScreenLayout';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
+import { sendJSONMessage } from '@/lib/utils';
 import React, { useEffect, useState } from 'react';
+import { set } from 'react-hook-form';
 import { useLocation, useParams } from 'react-router-dom';
 
 interface GameScreenProps {
 
 }
+type Task = "SMALL_BLIND" | "BIG_BLIND" | "CARD_DEAL" | "BET" | "PRE_FLOP"
 
 interface Response {
     status: "success" | "error";
@@ -15,14 +18,6 @@ interface Response {
     data?: any;
     error?: string;
     code: number;
-}
-
-
-const sendJSONMessage = (action: string, payload: { [key: string]: string | number }) => {
-    return {
-        action: action,
-        payload: payload
-    }
 }
 
 const actionCodeMap = new Map<number, string>([
@@ -72,14 +67,26 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
     const [players, setPlayers] = useState<string[]>([]);
     const [me, setMe] = useState<PlayerType>();
     const [error, setError] = useState<string>('');
-    const [username, setUsername] = useState(sessionStorage.getItem('username') || 'Player1');
+    const [playerIndex, setPlayerIndex] = useState<number>(Number(sessionStorage.getItem('player_index')) || 0);
     const [socket, setSocket] = useState<WebSocket | null>(null);
-    const [isYourTurn, setIsYourTurn] = useState(false);
+    const [centerTableCardNames, setCenterTableCardNames] = useState<string[]>([]);
+    const [myCardNames, setMyCardNames] = useState<string[]>([]);
+    const [hasFolded, setHasFolded] = useState(false);
+    const [message, setMessage] = useState('');
+    const [isRiver, setIsRiver] = useState(false);
+    const [isPreFlop, setIsPreFlop] = useState(false);
+    const [isStarted, setIsStarted] = useState(false);
+    const [currentStake, setCurrentStake] = useState(0);
     const { roomId } = useParams();
     const location = useLocation();
+    const [responseMessage, setResponseMessage] = useState('');
     const playerId = location.state?.playerId;
 
     const roomJoinedMessage = JSON.stringify(sendJSONMessage('player-join', { roomId: roomId as string, playerId: playerId as string }));
+    const gameStartMessage = JSON.stringify(sendJSONMessage('start-game', { roomId: roomId as string }));
+    const moveToNextRound = () => {
+        setIsPreFlop(false);
+    }
     const parseMessage = (message: Response) => {
 
         if (message.status === 'success') {
@@ -89,27 +96,33 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
                     let players: PlayerType[] = message.data.players;
                     setMe(players.find((player: any) => player.id === playerId))
                     setPlayers(players.map((player: any) => player.name));
-                    players.forEach((player: any) => {
+                    players.forEach((player: any, i) => {
                         if (player.id === playerId) {
-                            setUsername(player.name);
+                            setPlayerIndex(i);
                         }
                     });
                     break;
                 case 2:
-                    let sortedPlayers = message.data.sortedPlayers;
-                    if (sortedPlayers[0].id === playerId) {
-                        // ask something
+                    let nextPlayerForSmallBlindId = message.data.nextPlayerId;
+                    if (nextPlayerForSmallBlindId === playerId) {
+                        setMessage('Choose small blind amount');
                     }
-                    // ask sortedPlayers[0] to bet small blind
                     break;
                 case 3:
-                    if (sortedPlayers[1].id === playerId) {
-                        // ask something
+                    // small blind update successful
+                    let nextPlayerForBigBlindId = message.data.nextPlayerId;
+                    if (nextPlayerForBigBlindId === playerId) {
+                        setMessage('Choose big blind amount');
                     }
                     // now ask next player to bet big blind
                     break;
                 case 4:
                     // ask player to bet
+                    let nextPlayerForPreFlopId = message.data.nextPlayerId;
+                    if (nextPlayerForPreFlopId === playerId) {
+                        setIsPreFlop(true);
+                        setMessage('Place your bet');
+                    }
                     break;
                 case 5:
                     // get cards
@@ -118,7 +131,28 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
                     // winner determined
                     break;
                 case 7:
-                    // move to next player
+                    // after first and every bet we have arrived here
+                    const code = message.data.code;
+                    let nextPlayerForBetId = message.data.nextPlayerId;
+                    const currentBet = message.data.currentStake as string;
+                    setCurrentStake(Number(currentBet));
+                    if (code === 2 || code === 3 || code === 12) {
+                        // 2 - every player has set the same money , so next round, so prev bet set is false,
+                        // also pre flop is false because its only first round
+                        // 3 - this player has folded also everyone has placed their bet so prev bet set is false and moved to next round
+                        // 12 - this player has checked  prev bet set is false and moved to next round
+                        moveToNextRound();
+                    } else if (code === 9) {
+                        // its call so obv prev bet is set
+
+                    } else if (code === 7 || code === 8 || code === 10 || code === 11) {
+                        // 7 this player has folded, so simple move to next player
+                        // 8 means all in kia previous player ne, so move to next player
+                        // 10 means bet
+                        // 11 means check
+                    }
+                    if (nextPlayerForBetId === playerId) setMessage('Place your bet');
+
                     break;
                 case 8:
                     break;
@@ -130,15 +164,13 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
 
     }
 
+
     useEffect(() => {
         const newSocket = new WebSocket('ws://localhost:3000');
-
         newSocket.onopen = () => {
             console.log('WebSocket connection opened');
             newSocket.send(roomJoinedMessage);;
         };
-
-
         newSocket.onmessage = (event) => {
             console.log('Received message:', event.data);
             const message = JSON.parse(event.data);
@@ -146,17 +178,26 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
             parseMessage(message);
             // Handle incoming messages
         };
-
         newSocket.onclose = () => {
             console.log('WebSocket connection closed');
         };
-
         setSocket(newSocket);
-
         return () => {
             newSocket.close();
         };
     }, [roomId, playerId]);
+
+    useEffect(() => {
+        if (socket) {
+            socket.send(gameStartMessage);
+        }
+    }, [isStarted])
+
+    useEffect(() => {
+        if (socket) {
+            socket.send(responseMessage);
+        }
+    }, [responseMessage])
 
     const distributePlayers = () => {
 
@@ -176,49 +217,51 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
     return (
         <div className="flex min-h-screen flex-col items-center bg-gradient-to-br from-emerald-900 to-green-600 justify-center gap-4 ">
             {players.length === 1 && <>
-                <CenterArea />
-                <LowerArea firstUsername={players[0]} />
+                <CenterArea playerIndex={-1} message={message} />
+                <LowerArea firstUsername={players[0]} playerIndex={playerIndex === 0 ? 0 : -1} />
             </>}
             {players.length === 2 && (
                 <>
-                    <UpperArea firstUsername={players[1]} />
-                    <CenterArea />
-                    <LowerArea firstUsername={players[0]} />
+                    <UpperArea firstUsername={players[1]} playerIndex={playerIndex === 1 ? 0 : -1} />
+                    <CenterArea playerIndex={-1} message={message} />
+                    <LowerArea firstUsername={players[0]} playerIndex={playerIndex === 0 ? 0 : -1} />
                 </>
             )}
             {players.length === 3 && (
                 <>
-                    <CenterArea firstUsername={players[1]} secondUsername={players[2]} />
-                    <LowerArea firstUsername={players[0]} />
+                    <CenterArea firstUsername={players[1]} secondUsername={players[2]} playerIndex={playerIndex === 2 ? 1 : playerIndex === 1 ? 0 : -1} message={message} />
+                    <LowerArea firstUsername={players[0]} playerIndex={playerIndex === 0 ? 0 : -1} />
                 </>
             )}
             {players.length === 4 && (
                 <>
-                    <UpperArea firstUsername={players[2]} secondUsername={players[3]} />
-                    <CenterArea />
-                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} />
+                    <UpperArea firstUsername={players[2]} secondUsername={players[3]} playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1} />
+                    <CenterArea playerIndex={-1} message={message} />
+                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} playerIndex={playerIndex === 0 ? 0 : playerIndex === 1 ? 1 : -1} />
                 </>
             )}
             {players.length === 5 && (
                 <>
-                    <UpperArea firstUsername={players[4]} />
-                    <CenterArea firstUsername={players[2]} secondUsername={players[3]} />
-                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} />
+                    <UpperArea firstUsername={players[4]} playerIndex={playerIndex === 4 ? 0 : -1} />
+                    <CenterArea firstUsername={players[2]} secondUsername={players[3]} playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1} message={message} />
+                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} playerIndex={playerIndex === 0 ? 0 : playerIndex === 1 ? 1 : -1} />
                 </>
             )}
             {players.length === 6 && (
                 <>
-                    <UpperArea firstUsername={players[4]} secondUsername={players[5]} />
-                    <CenterArea firstUsername={players[2]} secondUsername={players[3]} />
-                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} />
+                    <UpperArea firstUsername={players[4]} secondUsername={players[5]} playerIndex={playerIndex === 4 ? 0 : playerIndex === 5 ? 1 : -1} />
+                    <CenterArea firstUsername={players[2]} secondUsername={players[3]} playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1} message={message} />
+                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} playerIndex={playerIndex === 0 ? 1 : playerIndex === 1 ? 1 : -1} />
                 </>
             )}
-            {/* 
-            <UpperArea firstUsername='Player 1' secondUsername='Player2' />
-            <CenterArea firstUsername='Player1' secondUsername='Player2' />
-            <LowerArea firstUsername='Player1' secondUsername='Player2' /> */}
+
+            <UpperArea firstUsername='Player 1' secondUsername='Player2' playerIndex={playerIndex} />
+            <CenterArea firstUsername='Player1' secondUsername='Player2' playerIndex={playerIndex} message={message} />
+            <LowerArea firstUsername='Player1' secondUsername='Player2' playerIndex={playerIndex} />
             <div className="flex">
-                <PokerActionDrawer me={me} />
+                {!isStarted ? <Button variant="outline" onClick={() => {
+                    setIsStarted(true)
+                }}>Start Game</Button> : <PokerActionDrawer me={me} roomId={roomId} isPreFlop={isPreFlop} isRiver={isRiver} setResponseMessage={setResponseMessage} message={message} currentStake={currentStake} />}
             </div>
         </div>
 

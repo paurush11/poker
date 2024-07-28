@@ -42,8 +42,9 @@ const gameStatusMap = new Map<number, GameStatusDetails>([
 
 const handlePokerAction = (message: string, pokerGame: Poker): Response => {
     const { action, payload } = JSON.parse(message);
-    const { prevBetSet, betMessage, betAmount, playerId, isPreFlop, isRiver, smallBlindValue, bigBlindValue, roomId, nextStep } = payload;
+    const { betMessage, betAmount, playerId, isPreFlop, isRiver, smallBlindValue, bigBlindValue, roomId, nextStep } = payload;
     const room = getRoom(roomId);
+
     switch (action) {
         case 'player-join':
             const player = room?.players?.find(player => player.id === playerId)
@@ -77,35 +78,41 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
             room.players?.forEach(player => pokerGame.addPlayer(player));
             const playersSorted = pokerGame.sortPlayers();
             pokerGame.dealerStartGame()
+            let nextPlayerForSmallBlindId = pokerGame.getCurrentPlayerId()
             return {
                 status: "success",
                 message: "Game started, All players are added, sorted and dealers have shuffled their cards",
                 data: {
                     sortedPlayers: playersSorted,
-                    nextUpdate: nextUpdates.SMALL_BLIND_UPDATE
+                    nextUpdate: nextUpdates.SMALL_BLIND_UPDATE,
+                    nextPlayerId: nextPlayerForSmallBlindId
                 },
                 code: 2
             }
         // pre flop done
         case 'small-binding-update':
             const smallBlind = pokerGame.smallBindUpdate(smallBlindValue);
+            let nextPlayerForBigBlindId = pokerGame.getCurrentPlayerId()
             return {
                 status: "success",
                 message: smallBlind.message,
                 data: {
                     smallBlindValue: smallBlindValue,
-                    nextUpdates: nextUpdates.BIG_BLIND_UPDATE
+                    nextUpdates: nextUpdates.BIG_BLIND_UPDATE,
+                    nextPlayerId: nextPlayerForBigBlindId
                 },
                 code: 3
             }
         case 'big-blind-update':
             const bigBlind = pokerGame.bigBindUpdate(bigBlindValue);
+            let nextPlayerForBetId = pokerGame.getCurrentPlayerId()
             return {
                 status: "success",
                 message: bigBlind.message,
                 data: {
                     bigBlindValue: bigBlindValue,
-                    nextUpdates: nextUpdates.BET
+                    nextUpdates: nextUpdates.BET,
+                    nextPlayerId: nextPlayerForBetId
                 },
                 code: 4
             }
@@ -125,7 +132,8 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
             }
         case 'bet':
             let code = 0, message = "";
-            if (prevBetSet) {
+            let currentStake = pokerGame.getCurrentStake();
+            if (currentStake !== 0) {
                 const response = pokerGame.betUpdateOnPrevBet(betMessage, betAmount);
                 code = response.code;
                 message = response.message;
@@ -163,12 +171,16 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
             } else {
                 pokerGame.dealAtTheTable(false);
             }
+            let nextPlayerId = pokerGame.getCurrentPlayerId()
+            currentStake = pokerGame.getCurrentStake();
             return {
                 status: "success",
                 message: message,
                 data: {
                     nextUpdate: nextUpdates.BET,
-                    code: code
+                    code: code,
+                    nextPlayerId: nextPlayerId,
+                    currentStake: currentStake
                 },
                 code: 7
             }

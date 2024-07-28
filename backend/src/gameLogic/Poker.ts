@@ -36,6 +36,14 @@ export class Poker {
         return this.communityCards;
     }
 
+    getCurrentPlayerId(): string {
+        return this.players[this.currentPlayerIndex].id;
+    }
+
+    getCurrentStake(): number {
+        return this.currentStake;
+    }
+
     getCards(playerId: string): Card[] {
         const player = this.players.find(player => player.id === playerId);
         if (player) {
@@ -207,8 +215,8 @@ export class Poker {
     betUpdateOnNoBetSet(message: BetMessageWhenNoBetSet, money: PokerMoney) {
         if (message === "check") {
             this.playerChecked.set(this.players[this.currentPlayerIndex].id, true);
-            const value = [...this.playerBets.values()].reduce((a, b) => a & b);
-            if (value === 0) {
+            const value = [...this.playerChecked.values()].reduce((a, b) => a && b);
+            if (value) {
                 this.updateCheckedStatus();
                 this.updatePlayerBets();
                 this.updateCurrentPlayerIndex()

@@ -22,7 +22,8 @@ function PokerActionDrawer({
     isPreFlop,
     message,
     setResponseMessage,
-    currentStake
+    currentStake,
+
 }: {
     me: PlayerType | undefined
     roomId: string | undefined
@@ -31,18 +32,24 @@ function PokerActionDrawer({
     message: string
     setResponseMessage: React.Dispatch<React.SetStateAction<string>>
     currentStake: number
+
 }) {
     const [selectedAction, setSelectedAction] = React.useState("")
     const [selectedBet, setSelectedBet] = React.useState(0)
     const [betMessage, setBetMessage] = React.useState<"call" | "raise" | "all-in" | "fold" | "check" | "bet" | "nothing">("nothing")
-    const smallBlindMessage = sendJSONMessage('small-binding-update', { smallBlindValue: selectedBet })
-    const bigBlindMessage = sendJSONMessage('big-blind-update', { bigBlindValue: selectedBet })
-    const betMessageResponse = sendJSONMessage('bet', { betValue: selectedBet, betMessage: betMessage, isPreFlop: isPreFlop, isRiver: isRiver })
+    const smallBlindMessage = sendJSONMessage('small-binding-update', { smallBlindValue: selectedBet, roomId: roomId as string })
+    const bigBlindMessage = sendJSONMessage('big-blind-update', { bigBlindValue: selectedBet, roomId: roomId as string })
+    const betMessageResponse = sendJSONMessage('bet', { betValue: selectedBet, betMessage: betMessage, isPreFlop: isPreFlop, isRiver: isRiver, roomId: roomId as string })
 
     const validateResponse = (): boolean => {
         if (message === "Choose small blind amount" || message === "Choose big blind amount") {
             if (!me || !me.balance || me.balance <= 0 || selectedBet === 0 || selectedBet > me?.balance) {
                 return false;
+            }
+            if (message === "Choose big blind amount") {
+                if (selectedBet < currentStake) {
+                    return false;
+                }
             }
         } else if (message === "Place your bet") {
             if (!me || !me.balance || me.balance <= 0 || selectedBet === 0 || selectedBet > me?.balance || !betMessage || betMessage.length === 0 || betMessage === "nothing") {

@@ -10,6 +10,7 @@ const IndividualCard: React.FC<IndividualCardProps> = ({ value, available }) => 
             width: "5vw"
         }}>
             {available && <img src={url} alt={value} />}
+            {!available && <img src={'/SVG-cards-1.3/Card_back_01.svg'} alt={'back_card'} />}
         </div>
     );
 }

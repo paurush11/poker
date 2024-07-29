@@ -2,7 +2,7 @@ import { PokerActionDrawer } from '@/components/PokerDrawer';
 import { CenterArea, LowerArea, UpperArea } from '@/components/PokerScreenLayout';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
-import { sendJSONMessage } from '@/lib/utils';
+import { fetchCards, sendJSONMessage } from '@/lib/utils';
 import React, { useEffect, useState } from 'react';
 import { set } from 'react-hook-form';
 import { useLocation, useParams } from 'react-router-dom';
@@ -67,16 +67,17 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
     const [players, setPlayers] = useState<string[]>([]);
     const [me, setMe] = useState<PlayerType>();
     const [error, setError] = useState<string>('');
-    const [playerIndex, setPlayerIndex] = useState<number>(Number(sessionStorage.getItem('player_index')) || 0);
+    const [playerIndex, setPlayerIndex] = useState<number>(Number(sessionStorage.getItem('player_index')) || -1);
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [centerTableCardNames, setCenterTableCardNames] = useState<string[]>([]);
     const [myCardNames, setMyCardNames] = useState<string[]>([]);
-    const [hasFolded, setHasFolded] = useState(false);
+    const [isMyTurn, setIsMyTurn] = useState(false);
     const [message, setMessage] = useState('');
     const [isRiver, setIsRiver] = useState(false);
     const [isPreFlop, setIsPreFlop] = useState(false);
     const [isStarted, setIsStarted] = useState(false);
     const [currentStake, setCurrentStake] = useState(0);
+    const [canIstart, setCanIstart] = useState(false);
     const { roomId } = useParams();
     const location = useLocation();
     const [responseMessage, setResponseMessage] = useState('');
@@ -87,41 +88,73 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
     const moveToNextRound = () => {
         setIsPreFlop(false);
     }
+
+    const startTheFuckingGame = (canIstart: boolean, amIEligible: boolean) => {
+        if (canIstart && amIEligible) {
+            setCanIstart(true);
+        }
+    }
+    useEffect(() => {
+        if (socket && canIstart) {
+            console.log("sending message");
+            socket.send(gameStartMessage);
+        }
+    }, [canIstart])
+
     const parseMessage = (message: Response) => {
 
         if (message.status === 'success') {
             switch (message.code) {
+
                 case 1:
                     // refresh players
                     let players: PlayerType[] = message.data.players;
                     setMe(players.find((player: any) => player.id === playerId))
                     setPlayers(players.map((player: any) => player.name));
+                    let amIEligible: boolean = false;
                     players.forEach((player: any, i) => {
                         if (player.id === playerId) {
                             setPlayerIndex(i);
+                            if (i === 0) {
+                                amIEligible = true;
+                            }
                         }
                     });
+                    let canStart = message.data.canStart as boolean;
+                    startTheFuckingGame(canStart, amIEligible)
                     break;
                 case 2:
                     let nextPlayerForSmallBlindId = message.data.nextPlayerId;
+                    setIsStarted(true);
                     if (nextPlayerForSmallBlindId === playerId) {
+                        setIsMyTurn(true)
                         setMessage('Choose small blind amount');
+                    } else {
+                        setMessage('');
                     }
                     break;
                 case 3:
+                    setIsStarted(true);
                     // small blind update successful
                     let nextPlayerForBigBlindId = message.data.nextPlayerId;
                     if (nextPlayerForBigBlindId === playerId) {
+                        setIsMyTurn(true)
                         setMessage('Choose big blind amount');
+                    } else {
+                        setMessage('');
                     }
                     // now ask next player to bet big blind
                     break;
                 case 4:
+                    setIsStarted(true);
                     // ask player to bet
                     let nextPlayerForPreFlopId = message.data.nextPlayerId;
                     if (nextPlayerForPreFlopId === playerId) {
+                        setIsMyTurn(true)
                         setIsPreFlop(true);
                         setMessage('Place your bet');
+                    } else {
+                        setMessage('');
                     }
                     break;
                 case 5:
@@ -131,11 +164,9 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
                     // winner determined
                     break;
                 case 7:
+                    setIsStarted(true);
                     // after first and every bet we have arrived here
                     const code = message.data.code;
-                    let nextPlayerForBetId = message.data.nextPlayerId;
-                    const currentBet = message.data.currentStake as string;
-                    setCurrentStake(Number(currentBet));
                     if (code === 2 || code === 3 || code === 12) {
                         // 2 - every player has set the same money , so next round, so prev bet set is false,
                         // also pre flop is false because its only first round
@@ -151,7 +182,19 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
                         // 10 means bet
                         // 11 means check
                     }
-                    if (nextPlayerForBetId === playerId) setMessage('Place your bet');
+                    let nextPlayerForBetId = message.data.nextPlayerId;
+                    const currentBet = message.data.currentStake as string;
+                    const playerCards = message.data.playerCards as string[];
+                    if (nextPlayerForBetId === playerId) {
+                        setIsMyTurn(true)
+                        setMyCardNames(fetchCards(playerCards));
+                        setMessage('Place your bet');
+                    } else {
+                        setMessage('');
+                    }
+                    const communityCards = message.data.communityCards as string[];
+                    setCenterTableCardNames(fetchCards(communityCards));
+                    setCurrentStake(Number(currentBet));
 
                     break;
                 case 8:
@@ -159,11 +202,11 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
 
             }
         } else if (message.status === "error") {
+
             setError(message.message);
         }
 
     }
-
 
     useEffect(() => {
         const newSocket = new WebSocket('ws://localhost:3000');
@@ -187,21 +230,13 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
         };
     }, [roomId, playerId]);
 
-    useEffect(() => {
-        if (socket) {
-            socket.send(gameStartMessage);
-        }
-    }, [isStarted])
-
+    // send response message
     useEffect(() => {
         if (socket) {
             socket.send(responseMessage);
         }
     }, [responseMessage])
 
-    const distributePlayers = () => {
-
-    }
     useEffect(() => {
         if (error)
             toast({
@@ -210,58 +245,193 @@ const GameScreen: React.FC<GameScreenProps> = ({ }) => {
                 variant: "destructive"
             })
     }, [error]);
-    useEffect(() => {
-        console.log(players)
-    }, [players, setPlayers])
-    console.log(players)
+
     return (
         <div className="flex min-h-screen flex-col items-center bg-gradient-to-br from-emerald-900 to-green-600 justify-center gap-4 ">
             {players.length === 1 && <>
-                <CenterArea playerIndex={-1} message={message} />
-                <LowerArea firstUsername={players[0]} playerIndex={playerIndex === 0 ? 0 : -1} />
+                <CenterArea
+                    playerIndex={-1}
+                    message={message}
+                    centerTableFirstCard={centerTableCardNames.length > 0 ? centerTableCardNames[0] : ''}
+                    centerTableSecondCard={centerTableCardNames.length > 1 ? centerTableCardNames[1] : ''}
+                    centerTableThirdCard={centerTableCardNames.length > 2 ? centerTableCardNames[2] : ''}
+                    centerTableFourthCard={centerTableCardNames.length > 3 ? centerTableCardNames[3] : ''}
+                    centerTableFifthCard={centerTableCardNames.length > 4 ? centerTableCardNames[4] : ''}
+                />
+                <LowerArea
+                    firstUsername={players[0]}
+                    playerIndex={playerIndex === 0 ? 0 : -1}
+                    firstUserFirstCard={myCardNames.length > 0 && playerIndex === 0 ? myCardNames[0] : ''}
+                    firstUserSecondCard={myCardNames.length > 1 && playerIndex === 0 ? myCardNames[1] : ''}
+
+                />
             </>}
             {players.length === 2 && (
                 <>
-                    <UpperArea firstUsername={players[1]} playerIndex={playerIndex === 1 ? 0 : -1} />
-                    <CenterArea playerIndex={-1} message={message} />
-                    <LowerArea firstUsername={players[0]} playerIndex={playerIndex === 0 ? 0 : -1} />
+                    <UpperArea
+                        firstUsername={players[1]}
+                        playerIndex={playerIndex === 1 ? 0 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 1 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 1 ? myCardNames[1] : ''}
+                    />
+                    <CenterArea
+                        playerIndex={-1}
+                        message={message}
+                        centerTableFirstCard={centerTableCardNames.length > 0 ? centerTableCardNames[0] : ''}
+                        centerTableSecondCard={centerTableCardNames.length > 1 ? centerTableCardNames[1] : ''}
+                        centerTableThirdCard={centerTableCardNames.length > 2 ? centerTableCardNames[2] : ''}
+                        centerTableFourthCard={centerTableCardNames.length > 3 ? centerTableCardNames[3] : ''}
+                        centerTableFifthCard={centerTableCardNames.length > 4 ? centerTableCardNames[4] : ''}
+                    />
+                    <LowerArea
+                        firstUsername={players[0]}
+                        playerIndex={playerIndex === 0 ? 0 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 0 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 0 ? myCardNames[1] : ''}
+                    />
                 </>
             )}
             {players.length === 3 && (
                 <>
-                    <CenterArea firstUsername={players[1]} secondUsername={players[2]} playerIndex={playerIndex === 2 ? 1 : playerIndex === 1 ? 0 : -1} message={message} />
-                    <LowerArea firstUsername={players[0]} playerIndex={playerIndex === 0 ? 0 : -1} />
+                    <CenterArea
+                        firstUsername={players[1]}
+                        secondUsername={players[2]}
+                        playerIndex={playerIndex === 2 ? 1 : playerIndex === 1 ? 0 : -1}
+                        message={message}
+                        centerTableFirstCard={centerTableCardNames.length > 0 ? centerTableCardNames[0] : ''}
+                        centerTableSecondCard={centerTableCardNames.length > 1 ? centerTableCardNames[1] : ''}
+                        centerTableThirdCard={centerTableCardNames.length > 2 ? centerTableCardNames[2] : ''}
+                        centerTableFourthCard={centerTableCardNames.length > 3 ? centerTableCardNames[3] : ''}
+                        centerTableFifthCard={centerTableCardNames.length > 4 ? centerTableCardNames[4] : ''}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 2 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 2 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 1 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 1 ? myCardNames[1] : ''}
+                    />
+                    <LowerArea
+                        firstUsername={players[0]}
+                        playerIndex={playerIndex === 0 ? 0 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 0 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 0 ? myCardNames[1] : ''}
+                    />
                 </>
             )}
             {players.length === 4 && (
                 <>
-                    <UpperArea firstUsername={players[2]} secondUsername={players[3]} playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1} />
-                    <CenterArea playerIndex={-1} message={message} />
-                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} playerIndex={playerIndex === 0 ? 0 : playerIndex === 1 ? 1 : -1} />
+                    <UpperArea
+                        firstUsername={players[2]}
+                        secondUsername={players[3]}
+                        playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 2 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 2 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 3 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 3 ? myCardNames[1] : ''}
+                    />
+                    <CenterArea
+                        playerIndex={-1}
+                        message={message}
+                        centerTableFirstCard={centerTableCardNames.length > 0 ? centerTableCardNames[0] : ''}
+                        centerTableSecondCard={centerTableCardNames.length > 1 ? centerTableCardNames[1] : ''}
+                        centerTableThirdCard={centerTableCardNames.length > 2 ? centerTableCardNames[2] : ''}
+                        centerTableFourthCard={centerTableCardNames.length > 3 ? centerTableCardNames[3] : ''}
+                        centerTableFifthCard={centerTableCardNames.length > 4 ? centerTableCardNames[4] : ''}
+                    />
+                    <LowerArea
+                        firstUsername={players[0]}
+                        secondUsername={players[1]}
+                        playerIndex={playerIndex === 0 ? 0 : playerIndex === 1 ? 1 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 0 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 0 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 1 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 1 ? myCardNames[1] : ''}
+                    />
                 </>
             )}
             {players.length === 5 && (
                 <>
-                    <UpperArea firstUsername={players[4]} playerIndex={playerIndex === 4 ? 0 : -1} />
-                    <CenterArea firstUsername={players[2]} secondUsername={players[3]} playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1} message={message} />
-                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} playerIndex={playerIndex === 0 ? 0 : playerIndex === 1 ? 1 : -1} />
+                    <UpperArea
+                        firstUsername={players[4]}
+                        playerIndex={playerIndex === 4 ? 0 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 4 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 4 ? myCardNames[1] : ''}
+                    />
+                    <CenterArea
+                        firstUsername={players[2]}
+                        secondUsername={players[3]}
+                        playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1}
+                        message={message}
+                        centerTableFirstCard={centerTableCardNames.length > 0 ? centerTableCardNames[0] : ''}
+                        centerTableSecondCard={centerTableCardNames.length > 1 ? centerTableCardNames[1] : ''}
+                        centerTableThirdCard={centerTableCardNames.length > 2 ? centerTableCardNames[2] : ''}
+                        centerTableFourthCard={centerTableCardNames.length > 3 ? centerTableCardNames[3] : ''}
+                        centerTableFifthCard={centerTableCardNames.length > 4 ? centerTableCardNames[4] : ''}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 2 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 2 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 3 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 3 ? myCardNames[1] : ''}
+                    />
+                    <LowerArea
+                        firstUsername={players[0]}
+                        secondUsername={players[1]}
+                        playerIndex={playerIndex === 0 ? 0 : playerIndex === 1 ? 1 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 0 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 0 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 1 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 1 ? myCardNames[1] : ''}
+                    />
                 </>
             )}
             {players.length === 6 && (
                 <>
-                    <UpperArea firstUsername={players[4]} secondUsername={players[5]} playerIndex={playerIndex === 4 ? 0 : playerIndex === 5 ? 1 : -1} />
-                    <CenterArea firstUsername={players[2]} secondUsername={players[3]} playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1} message={message} />
-                    <LowerArea firstUsername={players[0]} secondUsername={players[1]} playerIndex={playerIndex === 0 ? 1 : playerIndex === 1 ? 1 : -1} />
+                    <UpperArea
+                        firstUsername={players[4]}
+                        secondUsername={players[5]}
+                        playerIndex={playerIndex === 4 ? 0 : playerIndex === 5 ? 1 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 4 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 4 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 5 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 5 ? myCardNames[1] : ''}
+                    />
+                    <CenterArea
+                        firstUsername={players[2]}
+                        secondUsername={players[3]}
+                        playerIndex={playerIndex === 2 ? 0 : playerIndex === 3 ? 1 : -1}
+                        message={message}
+                        centerTableFirstCard={centerTableCardNames.length > 0 ? centerTableCardNames[0] : ''}
+                        centerTableSecondCard={centerTableCardNames.length > 1 ? centerTableCardNames[1] : ''}
+                        centerTableThirdCard={centerTableCardNames.length > 2 ? centerTableCardNames[2] : ''}
+                        centerTableFourthCard={centerTableCardNames.length > 3 ? centerTableCardNames[3] : ''}
+                        centerTableFifthCard={centerTableCardNames.length > 4 ? centerTableCardNames[4] : ''}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 2 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 2 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 3 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 3 ? myCardNames[1] : ''}
+                    />
+                    <LowerArea
+                        firstUsername={players[0]}
+                        secondUsername={players[1]}
+                        playerIndex={playerIndex === 0 ? 1 : playerIndex === 1 ? 1 : -1}
+                        firstUserFirstCard={myCardNames.length > 0 && playerIndex === 0 ? myCardNames[0] : ''}
+                        firstUserSecondCard={myCardNames.length > 1 && playerIndex === 0 ? myCardNames[1] : ''}
+                        secondUserFirstCard={myCardNames.length > 0 && playerIndex === 1 ? myCardNames[0] : ''}
+                        secondUserSecondCard={myCardNames.length > 1 && playerIndex === 1 ? myCardNames[1] : ''}
+                    />
                 </>
             )}
 
-            <UpperArea firstUsername='Player 1' secondUsername='Player2' playerIndex={playerIndex} />
+            {/* <UpperArea firstUsername='Player 1' secondUsername='Player2' playerIndex={playerIndex} />
             <CenterArea firstUsername='Player1' secondUsername='Player2' playerIndex={playerIndex} message={message} />
-            <LowerArea firstUsername='Player1' secondUsername='Player2' playerIndex={playerIndex} />
+            <LowerArea firstUsername='Player1' secondUsername='Player2' playerIndex={playerIndex} /> */}
             <div className="flex">
-                {!isStarted ? <Button variant="outline" onClick={() => {
-                    setIsStarted(true)
-                }}>Start Game</Button> : <PokerActionDrawer me={me} roomId={roomId} isPreFlop={isPreFlop} isRiver={isRiver} setResponseMessage={setResponseMessage} message={message} currentStake={currentStake} />}
+                {isStarted && isMyTurn && <PokerActionDrawer
+                    me={me}
+                    roomId={roomId}
+                    isPreFlop={isPreFlop}
+                    isRiver={isRiver}
+                    setResponseMessage={setResponseMessage}
+                    message={message}
+                    currentStake={currentStake}
+                />}
             </div>
         </div>
 

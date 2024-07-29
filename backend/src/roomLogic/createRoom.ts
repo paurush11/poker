@@ -19,11 +19,11 @@ const createRoom = (numberOfPlayers: number, player: Player): Room => {
     }
     const room: Room = {
         roomId: newRoomId,
-        numberOfPlayers: numberOfPlayers,
-        maxPlayers: 6,
+        numberOfPlayers: 1,
         gameState: "Starting",
         creationTime: Date.now(),
-        players: [player]
+        players: [player],
+        maxPlayers: numberOfPlayers
     }
     roomState.addRoom(room);
     // do lambda call to create room TO SAVE ROOM TO DB
@@ -40,7 +40,7 @@ const joinRoom = (roomId: string, player: Player): {
         if (!room) {
             throw new Error("Room not found");
         }
-        if (room.numberOfPlayers >= room.maxPlayers) {
+        if (room.numberOfPlayers > room.maxPlayers) {
             throw new Error("Room is full");
         }
         room.numberOfPlayers += 1;

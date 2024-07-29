@@ -1,5 +1,6 @@
 import { Player } from "../gameLogic/Player";
 import { Poker } from "../gameLogic/Poker";
+import { PokerState } from "../gameLogic/pokerState";
 import { getRoom } from "../roomLogic/createRoom";
 
 interface Response {
@@ -40,15 +41,14 @@ const gameStatusMap = new Map<number, GameStatusDetails>([
     [12, { message: "Every Player has checked, move to next round" }],
 ]);
 
-const handlePokerAction = (message: string, pokerGame: Poker): Response => {
+const handlePokerAction = (message: string): Response => {
     const { action, payload } = JSON.parse(message);
     const { betMessage, betAmount, playerId, isPreFlop, isRiver, smallBlindValue, bigBlindValue, roomId, nextStep } = payload;
+    let pokerGame = PokerState.getInstance().getPokerGame(roomId);
     const room = getRoom(roomId);
-
     switch (action) {
         case 'player-join':
             const player = room?.players?.find(player => player.id === playerId)
-            console.log(room)
             if (!player) {
                 return {
                     status: "error",
@@ -57,12 +57,25 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
                     code: 400
                 }
             }
+            if (room?.players?.length === room?.numberOfPlayers) {
+                return {
+                    status: "success",
+                    message: "Player joined successfully",
+                    data: {
+                        nextUpdates: nextUpdates.READY,
+                        players: room?.players || [],
+                        canStart: true
+                    },
+                    code: 1
+                }
+            }
             return {
                 status: "success",
                 message: "Player joined successfully",
                 data: {
                     nextUpdates: nextUpdates.READY,
-                    players: room?.players || []
+                    players: room?.players || [],
+                    canStart: false
                 },
                 code: 1
             }
@@ -75,10 +88,19 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
                     code: 400
                 }
             }
-            room.players?.forEach(player => pokerGame.addPlayer(player));
-            const playersSorted = pokerGame.sortPlayers();
-            pokerGame.dealerStartGame()
-            let nextPlayerForSmallBlindId = pokerGame.getCurrentPlayerId()
+            if (pokerGame) {
+                return {
+                    status: "error",
+                    message: "Invalid action",
+                    error: "Game already started",
+                    code: 400
+                }
+            }
+            const newPokerGame = PokerState.getInstance().createPokerGame(room.roomId)
+            room.players?.forEach(player => newPokerGame.addPlayer(player));
+            const playersSorted = newPokerGame.sortPlayers();
+            newPokerGame.dealerStartGame()
+            let nextPlayerForSmallBlindId = newPokerGame.getCurrentPlayerId()
             return {
                 status: "success",
                 message: "Game started, All players are added, sorted and dealers have shuffled their cards",
@@ -91,6 +113,13 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
             }
         // pre flop done
         case 'small-binding-update':
+
+            if (!pokerGame) return {
+                status: "error",
+                message: "Invalid action",
+                error: "Poker game not found",
+                code: 400
+            }
             const smallBlind = pokerGame.smallBindUpdate(smallBlindValue);
             let nextPlayerForBigBlindId = pokerGame.getCurrentPlayerId()
             return {
@@ -104,6 +133,12 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
                 code: 3
             }
         case 'big-blind-update':
+            if (!pokerGame) return {
+                status: "error",
+                message: "Invalid action",
+                error: "Poker game not found",
+                code: 400
+            }
             const bigBlind = pokerGame.bigBindUpdate(bigBlindValue);
             let nextPlayerForBetId = pokerGame.getCurrentPlayerId()
             return {
@@ -118,6 +153,12 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
             }
         // forced binds done
         case "get-cards":
+            if (!pokerGame) return {
+                status: "error",
+                message: "Invalid action",
+                error: "Poker game not found",
+                code: 400
+            }
             const playerCards = pokerGame.getCards(playerId);
             const communityCards = pokerGame.getCommunityCards();
             const response = {
@@ -132,6 +173,12 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
             }
         case 'bet':
             let code = 0, message = "";
+            if (!pokerGame) return {
+                status: "error",
+                message: "Invalid action",
+                error: "Poker game not found",
+                code: 400
+            }
             let currentStake = pokerGame.getCurrentStake();
             if (currentStake !== 0) {
                 const response = pokerGame.betUpdateOnPrevBet(betMessage, betAmount);
@@ -173,6 +220,8 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
             }
             let nextPlayerId = pokerGame.getCurrentPlayerId()
             currentStake = pokerGame.getCurrentStake();
+            let myPlayerCards = pokerGame.getCards(playerId).map(card => card.getValue() + ':' + card.getSuite());
+            let theCommunityCards = pokerGame.getCommunityCards().map(card => card.getValue() + ':' + card.getSuite());
             return {
                 status: "success",
                 message: message,
@@ -180,7 +229,9 @@ const handlePokerAction = (message: string, pokerGame: Poker): Response => {
                     nextUpdate: nextUpdates.BET,
                     code: code,
                     nextPlayerId: nextPlayerId,
-                    currentStake: currentStake
+                    currentStake: currentStake,
+                    playerCards: myPlayerCards,
+                    communityCards: theCommunityCards
                 },
                 code: 7
             }

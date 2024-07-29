@@ -7,6 +7,7 @@ import { Player } from './gameLogic/Player';
 import { handlePokerAction } from './WebSocketLogic/handlePokerAction';
 import cors from 'cors'
 import { RoomState } from './roomLogic/roomstate';
+import { PokerState } from './gameLogic/pokerState';
 
 const app = express();
 app.use(express.json());
@@ -193,29 +194,30 @@ app.post('/delete-room', (req, res) => {
     }
 });
 
+const sendMesageToAllClients = (message: string) => {
+    wss?.clients.forEach(client => {
+        client.send(message);
+    });
+}
+const sendPersonalMessage = (message: string, ws: WebSocket) => {
+
+}
+
 wss.on('connection', (ws) => {
     console.log('Client connected');
-    const pokerGame = new Poker("TexasHoldem" as gameFormat);
-
-    console.log(RoomState.getInstance().getRooms());
     ws.on('message', (message: string) => {
         console.log(`Received message: ${message}`);
-        const response = handlePokerAction(message, pokerGame);
-        if (response.code === 5) {
-            ws.send(JSON.stringify(response));
-        } else if (response.code === 2) {
+        const response = handlePokerAction(message);
+        console.log(response);
+        if (response.code === 5 || response.code === 400 || response.code === 2) {
             wss?.clients.forEach(client => {
-                if (client === ws)
-                    client.send(JSON.stringify(response));
+                if (client === ws) {
+                    client.send(JSON.stringify(message));
+                }
             });
         } else {
-            wss?.clients.forEach(client => {
-                client.send(JSON.stringify(response));
-            });
+            sendMesageToAllClients(JSON.stringify(response));
         }
-        console.log(response);
-
-
     });
     ws.on('error', (err) => {
         console.log(`Error: ${err}`);
